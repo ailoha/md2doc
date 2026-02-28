@@ -3,7 +3,6 @@ import {
   Document,
   HeadingLevel,
   LineRuleType,
-  Numbering,
   Packer,
   Paragraph,
   TextRun,
@@ -46,6 +45,20 @@ const preset = {
   }
 };
 
+function breakAutoLinks(s: string) {
+  // Prevent Word from auto-detecting URLs/emails and applying hyperlink (blue) styling.
+  const ZWSP = "\u200B"; // zero-width space
+
+  // http(s)://...
+  s = s.replace(/https?:\/\/[^\s]+/g, (m) => m.replace(/[.:/?#&=%_\-]/g, (ch) => ch + ZWSP));
+  // www....
+  s = s.replace(/www\.[^\s]+/g, (m) => m.replace(/[.:/?#&=%_\-]/g, (ch) => ch + ZWSP));
+  // email
+  s = s.replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, (m) => m.replace(/[@.]/g, (ch) => ch + ZWSP));
+
+  return s;
+}
+
 function makeRun(args: {
   text: string;
   eastAsia: string;
@@ -54,9 +67,10 @@ function makeRun(args: {
   bold?: boolean;
 }) {
   return new TextRun({
-    text: args.text,
+    text: breakAutoLinks(args.text),
     bold: args.bold,
     size: args.size,
+    color: "000000",
     font: {
       eastAsia: args.eastAsia,
       ascii: args.ascii,
@@ -88,8 +102,7 @@ function heading(text: string, level: 1 | 2 | 3) {
         text,
         eastAsia: font.eastAsia,
         ascii: font.ascii,
-        size,
-        bold: true
+        size
       })
     ],
     spacing: commonSpacing(),
@@ -135,7 +148,7 @@ function codeBlock(text: string) {
   });
 }
 
-const numbering = new Numbering({
+const numbering = {
   config: [
     {
       reference: "bullet",
@@ -149,7 +162,7 @@ const numbering = new Numbering({
       ]
     }
   ]
-});
+};
 
 function bulletItem(text: string) {
   const font = preset.fonts.body;
