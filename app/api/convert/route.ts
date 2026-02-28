@@ -15,8 +15,9 @@ export async function POST(req: Request) {
   const filename = typeof (payload as any)?.filename === "string" ? (payload as any).filename : "output.docx";
 
   const buf = await mdToDocxBuffer(markdown);
+  const body = new Uint8Array(buf); // Buffer -> Uint8Array for NextResponse BodyInit
 
-  return new NextResponse(buf, {
+  return new NextResponse(body, {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "Content-Disposition": `attachment; filename="${sanitizeFilename(filename)}"`
