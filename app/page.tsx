@@ -2,6 +2,27 @@
 
 import { useMemo, useState } from "react";
 
+function getH1Title(markdown: string) {
+  const lines = markdown.split(/\r?\n/);
+  for (const line of lines) {
+    // Match first level-1 heading only: "# " but not "## "
+    if (line.startsWith("# ") && !line.startsWith("## ")) {
+      const title = line.slice(2).trim();
+      if (title) return title;
+    }
+  }
+  return "";
+}
+
+function sanitizeFilenameBase(name: string) {
+  // Remove characters illegal in filenames on common OSes and trim length.
+  const cleaned = name
+    .replace(/[/\\?%*:|"<>]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned.length > 80 ? cleaned.slice(0, 80).trim() : cleaned;
+}
+
 export default function Page() {
   const [md, setMd] = useState<string>(() => `# 标题（一级）
 
@@ -24,10 +45,13 @@ export default function Page() {
   }, [md]);
 
   async function convert() {
+    const title = sanitizeFilenameBase(getH1Title(md));
+    const downloadName = title ? `${title}.docx` : "md2doc.docx";
+
     const res = await fetch("/api/convert", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ markdown: md, filename: "md2doc.docx" })
+      body: JSON.stringify({ markdown: md, filename: downloadName })
     });
 
     if (!res.ok) {
@@ -40,7 +64,7 @@ export default function Page() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "md2doc.docx";
+    a.download = downloadName;
     document.body.appendChild(a);
     a.click();
     a.remove();
