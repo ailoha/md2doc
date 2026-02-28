@@ -17,7 +17,7 @@ const CM = (cm: number) => Math.round((cm / 2.54) * 1440); // cm -> twips
 const PT_TO_HALF = (pt: number) => pt * 2; // pt -> half-points (docx size)
 const LINE_PT_EXACT = (pt: number) => pt * 20; // pt -> twips
 
-// Common mapping: 二号=22pt, 三号=16pt
+// Common mapping: 二号=22pt, 三号=16pt, 四号=14pt
 const SIZE_2 = PT_TO_HALF(22);
 const SIZE_3 = PT_TO_HALF(16);
 const SIZE_4 = PT_TO_HALF(14);
@@ -97,6 +97,9 @@ function heading(text: string, level: 1 | 2 | 3) {
   const headingLevel =
     level === 1 ? HeadingLevel.HEADING_1 : level === 2 ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_3;
 
+  // H1/H2: 段前/段后 = 1 行（按 12 磅/行 计算；Word 中“1行”常按 12pt 计）
+  const beforeAfter = level === 1 || level === 2 ? LINE_PT_EXACT(12) : 0;
+
   return new Paragraph({
     heading: headingLevel,
     alignment: AlignmentType.CENTER,
@@ -108,7 +111,11 @@ function heading(text: string, level: 1 | 2 | 3) {
         size
       })
     ],
-    spacing: commonSpacing(),
+    spacing: {
+      ...commonSpacing(),
+      before: beforeAfter,
+      after: beforeAfter
+    },
     indent: { left: 0, right: 0, firstLine: 0 }
   });
 }
@@ -166,24 +173,6 @@ const numbering = {
     }
   ]
 };
-
-function bulletItem(text: string) {
-  const font = preset.fonts.body;
-  return new Paragraph({
-    alignment: AlignmentType.LEFT,
-    numbering: { reference: "bullet", level: 0 },
-    children: [
-      makeRun({
-        text,
-        eastAsia: font.eastAsia,
-        ascii: font.ascii,
-        size: SIZE_3
-      })
-    ],
-    spacing: commonSpacing(),
-    indent: { left: 0, right: 0, firstLine: 0 }
-  });
-}
 
 function extractPlainText(children: any[]): string {
   if (!Array.isArray(children)) return "";
