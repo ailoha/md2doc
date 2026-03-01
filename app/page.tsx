@@ -76,12 +76,17 @@ export default function Page() {
       <div
         style={{
           display: "flex",
-          alignItems: "center",
+          alignItems: "flex-start",
           justifyContent: "space-between",
           marginBottom: 12
         }}
       >
-        <h1 style={{ margin: 0, fontSize: 22, lineHeight: "28px" }}>Markdown → DOCX（固定预设）</h1>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 22, lineHeight: "28px" }}>Markdown → DOCX（固定预设）</h1>
+          <div style={{ marginTop: 6, fontSize: 13, fontWeight: 700, opacity: 0.85 }}>
+            本工具主要用于把 .md 格式的法规文本转换为预设格式的 .docx 文件
+          </div>
+        </div>
 
         <a
           href="https://github.com/ailoha/md2doc"
@@ -120,6 +125,7 @@ export default function Page() {
         spellCheck={false}
         style={{
           width: "100%",
+          boxSizing: "border-box",
           height: 520,
           fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
           fontSize: 13,
@@ -146,7 +152,7 @@ export default function Page() {
       </div>
 
       <section style={{ marginTop: 16, fontSize: 13, opacity: 0.85 }}>
-        <div>本工具主要用于把 .md 格式的法规文本转换为预设格式的 .docx 文件：</div>
+        <div>预设格式：</div>
         <ul style={{ marginTop: 6 }}>
           <li>文件名：默认取第一条一级标题（以“# ”开头）作为“标题.docx”；如无一级标题则为 md2doc.docx。</li>
           <li>页边距：上 3.2cm、下 2.6cm、左 2.8cm、右 2.6cm。</li>
