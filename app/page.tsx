@@ -1,30 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { buildFilenameFromMarkdown } from "@/lib/markdownFilename";
+import styles from "./page.module.css";
 
-function getH1Title(markdown: string) {
-  const lines = markdown.split(/\r?\n/);
-  for (const line of lines) {
-    // Match first level-1 heading only: "# " but not "## "
-    if (line.startsWith("# ") && !line.startsWith("## ")) {
-      const title = line.slice(2).trim();
-      if (title) return title;
-    }
-  }
-  return "";
-}
-
-function sanitizeFilenameBase(name: string) {
-  // Remove characters illegal in filenames on common OSes and trim length.
-  const cleaned = name
-    .replace(/[/\\?%*:|"<>]/g, "_")
-    .replace(/\s+/g, " ")
-    .trim();
-  return cleaned.length > 80 ? cleaned.slice(0, 80).trim() : cleaned;
-}
-
-export default function Page() {
-  const [md, setMd] = useState<string>(() => `# 标题（一级）
+const DEFAULT_MARKDOWN = `# 标题（一级）
 
 ## 二级标题
 
@@ -36,74 +16,79 @@ export default function Page() {
 - 无序列表项 2
 
 段落二：继续正文内容。
-`);
+`;
+
+export default function Page() {
+  const [markdown, setMarkdown] = useState<string>(DEFAULT_MARKDOWN);
+  const [isConverting, setIsConverting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string>("");
 
   const stats = useMemo(() => {
-    const len = md.length;
-    const lines = md.split(/\r?\n/).length;
-    return { len, lines };
-  }, [md]);
+    return {
+      chars: markdown.length,
+      lines: markdown.split(/\r?\n/).length
+    };
+  }, [markdown]);
 
   async function convert() {
-    const title = sanitizeFilenameBase(getH1Title(md));
-    const downloadName = title ? `${title}.docx` : "md2doc.docx";
-
-    const res = await fetch("/api/convert", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ markdown: md, filename: downloadName })
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      alert(`转换失败：${res.status}\n${text}`);
+    if (isConverting) {
       return;
     }
 
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = downloadName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    const trimmed = markdown.trim();
+    if (!trimmed) {
+      setErrorMessage("请输入 Markdown 内容后再转换。");
+      return;
+    }
+
+    setIsConverting(true);
+    setErrorMessage("");
+
+    const downloadName = buildFilenameFromMarkdown(trimmed);
+
+    try {
+      const response = await fetch("/api/convert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ markdown: trimmed, filename: downloadName })
+      });
+
+      if (!response.ok) {
+        const detail = await response.text().catch(() => "");
+        setErrorMessage(detail || `转换失败（HTTP ${response.status}）`);
+        return;
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = downloadName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setErrorMessage("网络异常，文档转换失败，请稍后再试。");
+    } finally {
+      setIsConverting(false);
+    }
   }
 
   return (
-    <main style={{ maxWidth: 980, margin: "24px auto", padding: 16 }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          marginBottom: 12
-        }}
-      >
+    <main className={styles.page}>
+      <header className={styles.header}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 22, lineHeight: "28px" }}>Markdown → DOCX（固定预设）</h1>
-          <div style={{ marginTop: 6, fontSize: 13, fontWeight: 700, opacity: 0.85 }}>
-            本工具主要用于把 .md 格式的法规文本转换为预设格式的 .docx 文件
-          </div>
+          <h1 className={styles.title}>Markdown → DOCX（固定预设）</h1>
+          <p className={styles.subtitle}>本工具用于将 Markdown 法规文本转换为预设格式的 Word 文档。</p>
         </div>
-
         <a
+          className={styles.repoLink}
           href="https://github.com/ailoha/md2doc"
           target="_blank"
           rel="noreferrer"
           aria-label="GitHub repository"
           title="GitHub 仓库"
-          style={{
-            width: 28,
-            height: 28,
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            opacity: 0.8,
-            color: "#000",
-            textDecoration: "none"
-          }}
         >
           <svg viewBox="0 0 16 16" width="22" height="22" aria-hidden="true" focusable="false">
             <path
@@ -112,56 +97,39 @@ export default function Page() {
             />
           </svg>
         </a>
-      </div>
+      </header>
 
-      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10, fontSize: 13, opacity: 0.8 }}>
-        <span>字符：{stats.len}</span>
+      <div className={styles.stats}>
+        <span>字符：{stats.chars}</span>
         <span>行数：{stats.lines}</span>
       </div>
 
       <textarea
-        value={md}
-        onChange={(e) => setMd(e.target.value)}
+        className={styles.editor}
+        value={markdown}
+        onChange={(event) => setMarkdown(event.target.value)}
         spellCheck={false}
-        style={{
-          width: "100%",
-          boxSizing: "border-box",
-          height: 520,
-          fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-          fontSize: 13,
-          lineHeight: 1.4,
-          padding: 12,
-          borderRadius: 10,
-          border: "1px solid rgba(0,0,0,0.15)"
-        }}
       />
 
-      <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-        <button
-          onClick={convert}
-          style={{
-            padding: "10px 14px",
-            borderRadius: 10,
-            border: "1px solid rgba(0,0,0,0.2)",
-            background: "white",
-            cursor: "pointer"
-          }}
-        >
-          转换并下载 .docx
+      <div className={styles.actions}>
+        <button className={styles.convertBtn} onClick={convert} disabled={isConverting}>
+          {isConverting ? "转换中..." : "转换并下载 .docx"}
         </button>
       </div>
 
-      <section style={{ marginTop: 16, fontSize: 13, opacity: 0.85 }}>
-        <div>预设格式：</div>
-        <ul style={{ marginTop: 6 }}>
-          <li>文件名：默认取第一条一级标题（以“# ”开头）作为“标题.docx”；如无一级标题则为 md2doc.docx。</li>
+      {errorMessage ? <p className={styles.error}>{errorMessage}</p> : null}
+
+      <section className={styles.preset}>
+        <h2 className={styles.presetTitle}>预设格式</h2>
+        <ul className={styles.presetList}>
+          <li>文件名：默认使用第一条一级标题（`# `）作为 `标题.docx`，无一级标题时为 `md2doc.docx`。</li>
           <li>页边距：上 3.2cm、下 2.6cm、左 2.8cm、右 2.6cm。</li>
           <li>缩进：左右 0；首行缩进 2 字符。</li>
           <li>行距：固定值 30 磅。</li>
-          <li>标题：# 方正小标宋_GBK 二号 居中；## 方正黑体_GBK 三号 居中；### 方正楷体_GBK 三号 居中；标题不加粗；# / ## 段前段后间距各 1 行。</li>
-          <li>正文：方正仿宋_GBK 三号 左对齐；原 Markdown 中 **加粗** 的文字会加粗显示。</li>
-          <li>英文/数字：按宋体渲染（ascii/hAnsi）。</li>
-          <li>页脚：默认居中页码（1, 2, 3…），宋体四号。</li>
+          <li>标题：# 方正小标宋_GBK 二号居中；## 方正黑体_GBK 三号居中；### 方正楷体_GBK 三号居中。</li>
+          <li>正文：方正仿宋_GBK 三号左对齐；Markdown 中 `**加粗**` 会保留加粗。</li>
+          <li>英文/数字：按宋体（ascii/hAnsi）渲染。</li>
+          <li>页脚：默认居中页码（1,2,3...），宋体四号。</li>
         </ul>
       </section>
     </main>

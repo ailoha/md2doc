@@ -3,102 +3,253 @@ import {
   Document,
   Footer,
   HeadingLevel,
+  LevelFormat,
   LineRuleType,
   Packer,
   PageNumber,
   Paragraph,
-  TextRun,
-  LevelFormat
+  TextRun
 } from "docx";
 import { unified } from "unified";
 import remarkParse from "remark-parse";
 
-const CM = (cm: number) => Math.round((cm / 2.54) * 1440); // cm -> twips
-const PT_TO_HALF = (pt: number) => pt * 2; // pt -> half-points (docx size)
-const LINE_PT_EXACT = (pt: number) => pt * 20; // pt -> twips
+type MarkdownNode = {
+  type: string;
+  children?: MarkdownNode[];
+  value?: string;
+  depth?: number;
+  ordered?: boolean;
+};
 
-// Common mapping: 二号=22pt, 三号=16pt, 四号=14pt
-const SIZE_2 = PT_TO_HALF(22);
-const SIZE_3 = PT_TO_HALF(16);
-const SIZE_4 = PT_TO_HALF(14);
+const cmToTwips = (cm: number) => Math.round((cm / 2.54) * 1440);
+const ptToHalfPoint = (pt: number) => pt * 2;
+const ptToTwips = (pt: number) => pt * 20;
 
-const preset = {
+const SIZE_2 = ptToHalfPoint(22);
+const SIZE_3 = ptToHalfPoint(16);
+const SIZE_4 = ptToHalfPoint(14);
+
+const PRESET = {
   margins: {
-    top: CM(3.2),
-    bottom: CM(2.6),
-    left: CM(2.8),
-    right: CM(2.6)
+    top: cmToTwips(3.2),
+    bottom: cmToTwips(2.6),
+    left: cmToTwips(2.8),
+    right: cmToTwips(2.6)
   },
   indent: {
     left: 0,
     right: 0,
-    firstLine: 2 * 240 // 首行缩进2字符（经验值：1字符≈240 twips）
+    firstLine: 2 * 240
   },
   line: {
-    twips: LINE_PT_EXACT(30) // 固定值 30磅
+    twips: ptToTwips(30)
   },
   fonts: {
-    // Headings
     h1: { eastAsia: "方正小标宋_GBK", ascii: "宋体" },
     h2: { eastAsia: "方正黑体_GBK", ascii: "宋体" },
     h3: { eastAsia: "方正楷体_GBK", ascii: "宋体" },
-    // Body
     body: { eastAsia: "方正仿宋_GBK", ascii: "宋体" },
     code: { eastAsia: "方正仿宋_GBK", ascii: "Consolas" }
   }
+} as const;
+
+const URL_LIKE_HINT_RE = /https?:\/\/|www\.|@/;
+const HTTP_LINK_RE = /https?:\/\/[^\s]+/g;
+const WWW_LINK_RE = /www\.[^\s]+/g;
+const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+const AUTO_LINK_BREAK_RE = /[.:/?#&=%_\-]/g;
+const EMAIL_BREAK_RE = /[@.]/g;
+const ZERO_WIDTH_SPACE = "\u200B";
+
+const numbering = {
+  config: [
+    {
+      reference: "bullet",
+      levels: [
+        {
+          level: 0,
+          format: LevelFormat.BULLET,
+          text: "•",
+          alignment: AlignmentType.LEFT
+        },
+        {
+          level: 1,
+          format: LevelFormat.BULLET,
+          text: "◦",
+          alignment: AlignmentType.LEFT
+        },
+        {
+          level: 2,
+          format: LevelFormat.BULLET,
+          text: "▪",
+          alignment: AlignmentType.LEFT
+        }
+      ]
+    },
+    {
+      reference: "decimal",
+      levels: [
+        {
+          level: 0,
+          format: LevelFormat.DECIMAL,
+          text: "%1.",
+          alignment: AlignmentType.LEFT
+        },
+        {
+          level: 1,
+          format: LevelFormat.DECIMAL,
+          text: "%2.",
+          alignment: AlignmentType.LEFT
+        },
+        {
+          level: 2,
+          format: LevelFormat.DECIMAL,
+          text: "%3.",
+          alignment: AlignmentType.LEFT
+        }
+      ]
+    }
+  ]
 };
 
-function breakAutoLinks(s: string) {
-  // Prevent Word from auto-detecting URLs/emails and applying hyperlink (blue) styling.
-  const ZWSP = "\u200B"; // zero-width space
-
-  // http(s)://...
-  s = s.replace(/https?:\/\/[^\s]+/g, (m) => m.replace(/[.:/?#&=%_\-]/g, (ch) => ch + ZWSP));
-  // www....
-  s = s.replace(/www\.[^\s]+/g, (m) => m.replace(/[.:/?#&=%_\-]/g, (ch) => ch + ZWSP));
-  // email
-  s = s.replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, (m) => m.replace(/[@.]/g, (ch) => ch + ZWSP));
-
-  return s;
+function getChildren(node: MarkdownNode | undefined): MarkdownNode[] {
+  return Array.isArray(node?.children) ? node!.children! : [];
 }
 
-function makeRun(args: {
-  text: string;
-  eastAsia: string;
-  ascii: string;
-  size: number;
-  bold?: boolean;
-}) {
-  return new TextRun({
-    text: breakAutoLinks(args.text),
-    bold: args.bold,
-    size: args.size,
-    color: "000000",
-    font: {
-      eastAsia: args.eastAsia,
-      ascii: args.ascii,
-      hAnsi: args.ascii
-    }
-  });
+function getNodeText(node: MarkdownNode | undefined): string {
+  return typeof node?.value === "string" ? node.value : "";
+}
+
+function breakAutoLinks(text: string): string {
+  if (!text || !URL_LIKE_HINT_RE.test(text)) {
+    return text;
+  }
+
+  let output = text;
+  output = output.replace(HTTP_LINK_RE, (value) => value.replace(AUTO_LINK_BREAK_RE, (ch) => `${ch}${ZERO_WIDTH_SPACE}`));
+  output = output.replace(WWW_LINK_RE, (value) => value.replace(AUTO_LINK_BREAK_RE, (ch) => `${ch}${ZERO_WIDTH_SPACE}`));
+  output = output.replace(EMAIL_RE, (value) => value.replace(EMAIL_BREAK_RE, (ch) => `${ch}${ZERO_WIDTH_SPACE}`));
+  return output;
 }
 
 function commonSpacing() {
   return {
-    line: preset.line.twips,
+    line: PRESET.line.twips,
     lineRule: LineRuleType.EXACT,
     before: 0,
     after: 0
   };
 }
 
-function heading(text: string, level: 1 | 2 | 3) {
-  const font = level === 1 ? preset.fonts.h1 : level === 2 ? preset.fonts.h2 : preset.fonts.h3;
-  const size = level === 1 ? SIZE_2 : SIZE_3;
+function makeRun(params: {
+  text: string;
+  eastAsia: string;
+  ascii: string;
+  size: number;
+  bold?: boolean;
+}): TextRun {
+  return new TextRun({
+    text: breakAutoLinks(params.text),
+    bold: params.bold,
+    size: params.size,
+    color: "000000",
+    font: {
+      eastAsia: params.eastAsia,
+      ascii: params.ascii,
+      hAnsi: params.ascii
+    }
+  });
+}
+
+function extractPlainText(nodes: MarkdownNode[]): string {
+  let output = "";
+  for (const node of nodes) {
+    if (node.type === "text" || node.type === "inlineCode") {
+      output += getNodeText(node);
+      continue;
+    }
+
+    const children = getChildren(node);
+    if (children.length > 0) {
+      output += extractPlainText(children);
+    }
+  }
+
+  return output;
+}
+
+function markdownInlinesToRuns(nodes: MarkdownNode[], inheritedBold = false): TextRun[] {
+  const runs: TextRun[] = [];
+  const font = PRESET.fonts.body;
+
+  for (const node of nodes) {
+    if (node.type === "text" || node.type === "inlineCode") {
+      const text = getNodeText(node);
+      if (text.length > 0) {
+        runs.push(
+          makeRun({
+            text,
+            eastAsia: font.eastAsia,
+            ascii: font.ascii,
+            size: SIZE_3,
+            bold: inheritedBold
+          })
+        );
+      }
+      continue;
+    }
+
+    const children = getChildren(node);
+    if (children.length === 0) {
+      continue;
+    }
+
+    if (node.type === "strong") {
+      runs.push(...markdownInlinesToRuns(children, true));
+      continue;
+    }
+
+    runs.push(...markdownInlinesToRuns(children, inheritedBold));
+  }
+
+  return runs;
+}
+
+function bodyParagraphFromRuns(runs: TextRun[]): Paragraph {
+  return new Paragraph({
+    alignment: AlignmentType.LEFT,
+    children: runs,
+    spacing: commonSpacing(),
+    indent: {
+      left: PRESET.indent.left,
+      right: PRESET.indent.right,
+      firstLine: PRESET.indent.firstLine
+    }
+  });
+}
+
+function paragraphFromInlineNodes(nodes: MarkdownNode[]): Paragraph {
+  const runs = markdownInlinesToRuns(nodes);
+  if (runs.length > 0) {
+    return bodyParagraphFromRuns(runs);
+  }
+
+  return bodyParagraphFromRuns([
+    makeRun({
+      text: extractPlainText(nodes),
+      eastAsia: PRESET.fonts.body.eastAsia,
+      ascii: PRESET.fonts.body.ascii,
+      size: SIZE_3
+    })
+  ]);
+}
+
+function headingParagraph(text: string, level: 1 | 2 | 3): Paragraph {
   const headingLevel =
     level === 1 ? HeadingLevel.HEADING_1 : level === 2 ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_3;
-
-  // H1/H2: 段前/段后 = 1 行（按 12 磅/行 计算；Word 中“1行”常按 12pt 计）
-  const beforeAfter = level === 1 || level === 2 ? LINE_PT_EXACT(12) : 0;
+  const font = level === 1 ? PRESET.fonts.h1 : level === 2 ? PRESET.fonts.h2 : PRESET.fonts.h3;
+  const size = level === 1 ? SIZE_2 : SIZE_3;
+  const beforeAfter = level <= 2 ? ptToTwips(12) : 0;
 
   return new Paragraph({
     heading: headingLevel,
@@ -120,220 +271,187 @@ function heading(text: string, level: 1 | 2 | 3) {
   });
 }
 
-function bodyParagraph(text: string) {
-  const font = preset.fonts.body;
-  return new Paragraph({
-    alignment: AlignmentType.LEFT,
-    children: [
-      makeRun({
-        text,
-        eastAsia: font.eastAsia,
-        ascii: font.ascii,
-        size: SIZE_3
+function codeBlockParagraphs(value: string): Paragraph[] {
+  if (!value.trim()) {
+    return [];
+  }
+
+  const lines = value.replace(/\r\n/g, "\n").split("\n");
+  while (lines.length > 1 && lines[lines.length - 1] === "") {
+    lines.pop();
+  }
+
+  return lines.map(
+    (line) =>
+      new Paragraph({
+        alignment: AlignmentType.LEFT,
+        children: [
+          makeRun({
+            text: line,
+            eastAsia: PRESET.fonts.code.eastAsia,
+            ascii: PRESET.fonts.code.ascii,
+            size: SIZE_3
+          })
+        ],
+        spacing: commonSpacing(),
+        indent: { left: 0, right: 0, firstLine: 0 }
       })
-    ],
-    spacing: commonSpacing(),
-    indent: {
-      left: preset.indent.left,
-      right: preset.indent.right,
-      firstLine: preset.indent.firstLine
-    }
-  });
+  );
 }
 
-function codeBlock(text: string) {
-  const font = preset.fonts.code;
+function toListLevel(level: number): number {
+  return Math.min(Math.max(level, 0), 2);
+}
+
+function listItemParagraphFromInlineNodes(nodes: MarkdownNode[], ordered: boolean, level: number): Paragraph {
+  const runs = markdownInlinesToRuns(nodes);
+  const fallback = extractPlainText(nodes);
+  const safeLevel = toListLevel(level);
+
   return new Paragraph({
     alignment: AlignmentType.LEFT,
-    children: [
-      makeRun({
-        text,
-        eastAsia: font.eastAsia,
-        ascii: font.ascii,
-        size: SIZE_3
-      })
-    ],
+    numbering: {
+      reference: ordered ? "decimal" : "bullet",
+      level: safeLevel
+    },
+    children:
+      runs.length > 0
+        ? runs
+        : [
+            makeRun({
+              text: fallback,
+              eastAsia: PRESET.fonts.body.eastAsia,
+              ascii: PRESET.fonts.body.ascii,
+              size: SIZE_3
+            })
+          ],
     spacing: commonSpacing(),
     indent: { left: 0, right: 0, firstLine: 0 }
   });
 }
 
-const numbering = {
-  config: [
-    {
-      reference: "bullet",
-      levels: [
-        {
-          level: 0,
-          format: LevelFormat.BULLET,
-          text: "•",
-          alignment: AlignmentType.LEFT
+function appendList(listNode: MarkdownNode, paragraphs: Paragraph[], level = 0): void {
+  const ordered = !!listNode.ordered;
+  const items = getChildren(listNode);
+
+  for (const item of items) {
+    if (item.type !== "listItem") {
+      continue;
+    }
+
+    const itemChildren = getChildren(item);
+    const firstParagraph = itemChildren.find((child) => child.type === "paragraph");
+
+    if (firstParagraph) {
+      const inlineNodes = getChildren(firstParagraph);
+      if (extractPlainText(inlineNodes).trim()) {
+        paragraphs.push(listItemParagraphFromInlineNodes(inlineNodes, ordered, level));
+      }
+    }
+
+    for (const child of itemChildren) {
+      if (child === firstParagraph) {
+        continue;
+      }
+
+      if (child.type === "list") {
+        appendList(child, paragraphs, level + 1);
+        continue;
+      }
+
+      if (child.type === "paragraph") {
+        const inlineNodes = getChildren(child);
+        if (extractPlainText(inlineNodes).trim()) {
+          paragraphs.push(paragraphFromInlineNodes(inlineNodes));
         }
-      ]
-    }
-  ]
-};
-
-function extractPlainText(children: any[]): string {
-  if (!Array.isArray(children)) return "";
-  let out = "";
-  for (const c of children) {
-    if (!c) continue;
-    if (c.type === "text" && typeof c.value === "string") out += c.value;
-    else if (c.type === "inlineCode" && typeof c.value === "string") out += c.value;
-    else if (Array.isArray(c.children)) out += extractPlainText(c.children);
-  }
-  return out;
-}
-
-function mdChildrenToRuns(children: any[], opts?: { bold?: boolean }): TextRun[] {
-  if (!Array.isArray(children)) return [];
-  const bold = !!opts?.bold;
-  const font = preset.fonts.body;
-  const runs: TextRun[] = [];
-
-  for (const c of children) {
-    if (!c) continue;
-
-    if (c.type === "text" && typeof c.value === "string") {
-      if (c.value.length) {
-        runs.push(
-          makeRun({
-            text: c.value,
-            eastAsia: font.eastAsia,
-            ascii: font.ascii,
-            size: SIZE_3,
-            bold
-          })
-        );
+        continue;
       }
-      continue;
-    }
 
-    if (c.type === "inlineCode" && typeof c.value === "string") {
-      if (c.value.length) {
-        runs.push(
-          makeRun({
-            text: c.value,
-            eastAsia: font.eastAsia,
-            ascii: font.ascii,
-            size: SIZE_3,
-            bold
-          })
-        );
+      if (child.type === "code") {
+        paragraphs.push(...codeBlockParagraphs(getNodeText(child)));
       }
-      continue;
-    }
-
-    if (c.type === "strong") {
-      runs.push(...mdChildrenToRuns(c.children, { bold: true }));
-      continue;
-    }
-
-    if (Array.isArray(c.children)) {
-      // For other inline nodes (emphasis/link/etc.), keep text and inherit bold state.
-      runs.push(...mdChildrenToRuns(c.children, { bold }));
-      continue;
     }
   }
-
-  return runs;
 }
 
-function paragraphFromMdChildren(children: any[]) {
-  const runs = mdChildrenToRuns(children);
-  const textFallback = extractPlainText(children);
+function appendBlock(node: MarkdownNode, paragraphs: Paragraph[]): void {
+  switch (node.type) {
+    case "heading": {
+      const text = extractPlainText(getChildren(node)).trim();
+      if (!text) {
+        return;
+      }
 
-  return new Paragraph({
-    alignment: AlignmentType.LEFT,
-    children: runs.length
-      ? runs
-      : [
-          makeRun({
-            text: textFallback,
-            eastAsia: preset.fonts.body.eastAsia,
-            ascii: preset.fonts.body.ascii,
-            size: SIZE_3
+      const depth = Math.min(3, Math.max(1, Number(node.depth ?? 1))) as 1 | 2 | 3;
+      paragraphs.push(headingParagraph(text, depth));
+      return;
+    }
+
+    case "paragraph": {
+      const inlineNodes = getChildren(node);
+      if (extractPlainText(inlineNodes).trim()) {
+        paragraphs.push(paragraphFromInlineNodes(inlineNodes));
+      }
+      return;
+    }
+
+    case "list": {
+      appendList(node, paragraphs);
+      return;
+    }
+
+    case "code": {
+      paragraphs.push(...codeBlockParagraphs(getNodeText(node)));
+      return;
+    }
+
+    case "blockquote": {
+      for (const child of getChildren(node)) {
+        appendBlock(child, paragraphs);
+      }
+      return;
+    }
+
+    default:
+      return;
+  }
+}
+
+function footer(): Footer {
+  return new Footer({
+    children: [
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children: [
+          new TextRun({
+            children: [PageNumber.CURRENT],
+            size: SIZE_4,
+            bold: false,
+            color: "000000",
+            font: { eastAsia: "宋体", ascii: "宋体", hAnsi: "宋体" }
           })
         ],
-    spacing: commonSpacing(),
-    indent: {
-      left: preset.indent.left,
-      right: preset.indent.right,
-      firstLine: preset.indent.firstLine
-    }
+        spacing: commonSpacing()
+      })
+    ]
   });
 }
 
-function bulletItemFromMdChildren(children: any[]) {
-  const runs = mdChildrenToRuns(children);
-  const textFallback = extractPlainText(children);
-
-  return new Paragraph({
-    alignment: AlignmentType.LEFT,
-    numbering: { reference: "bullet", level: 0 },
-    children: runs.length
-      ? runs
-      : [
-          makeRun({
-            text: textFallback,
-            eastAsia: preset.fonts.body.eastAsia,
-            ascii: preset.fonts.body.ascii,
-            size: SIZE_3
-          })
-        ],
-    spacing: commonSpacing(),
-    indent: { left: 0, right: 0, firstLine: 0 }
-  });
-}
-
-export async function mdToDocxBuffer(markdown: string) {
-  const tree = unified().use(remarkParse).parse(markdown) as any;
-
+export async function mdToDocxBuffer(markdown: string): Promise<Buffer> {
+  const tree = unified().use(remarkParse).parse(markdown) as MarkdownNode;
   const paragraphs: Paragraph[] = [];
+  const emptyParagraph = bodyParagraphFromRuns([
+    makeRun({
+      text: "",
+      eastAsia: PRESET.fonts.body.eastAsia,
+      ascii: PRESET.fonts.body.ascii,
+      size: SIZE_3
+    })
+  ]);
 
-  const visit = (node: any) => {
-    if (!node || typeof node !== "object") return;
-
-    switch (node.type) {
-      case "heading": {
-        const text = extractPlainText(node.children);
-        const depth = Math.min(3, Math.max(1, Number(node.depth || 1))) as 1 | 2 | 3;
-        if (text.trim()) paragraphs.push(heading(text.trim(), depth));
-        break;
-      }
-      case "paragraph": {
-        const text = extractPlainText(node.children);
-        if (text.trim()) paragraphs.push(paragraphFromMdChildren(node.children));
-        break;
-      }
-      case "list": {
-        // 当前实现：统一作为无序列表；后续如需有序列表可扩展 numbering
-        const items = Array.isArray(node.children) ? node.children : [];
-        for (const item of items) {
-          // remark 的 listItem 里通常 children[0] 是 paragraph
-          const first = Array.isArray(item.children) ? item.children[0] : null;
-          const mdChildren = first?.type === "paragraph" ? (first.children || []) : (item.children || []);
-          const text = extractPlainText(mdChildren);
-          if (text.trim()) paragraphs.push(bulletItemFromMdChildren(mdChildren));
-        }
-        break;
-      }
-      case "code": {
-        const text = typeof node.value === "string" ? node.value : "";
-        if (text.trim()) paragraphs.push(codeBlock(text));
-        break;
-      }
-      default:
-        break;
-    }
-
-    if (Array.isArray(node.children)) {
-      for (const c of node.children) visit(c);
-    }
-  };
-
-  visit(tree);
+  for (const node of getChildren(tree)) {
+    appendBlock(node, paragraphs);
+  }
 
   const doc = new Document({
     numbering,
@@ -342,36 +460,20 @@ export async function mdToDocxBuffer(markdown: string) {
         properties: {
           page: {
             margin: {
-              top: preset.margins.top,
-              bottom: preset.margins.bottom,
-              left: preset.margins.left,
-              right: preset.margins.right
+              top: PRESET.margins.top,
+              bottom: PRESET.margins.bottom,
+              left: PRESET.margins.left,
+              right: PRESET.margins.right
             }
           }
         },
         footers: {
-          default: new Footer({
-            children: [
-              new Paragraph({
-                alignment: AlignmentType.CENTER,
-                children: [
-                  new TextRun({
-                    children: [PageNumber.CURRENT],
-                    size: SIZE_4,
-                    bold: false,
-                    color: "000000",
-                    font: { eastAsia: "宋体", ascii: "宋体", hAnsi: "宋体" }
-                  })
-                ],
-                spacing: commonSpacing()
-              })
-            ]
-          })
+          default: footer()
         },
-        children: paragraphs.length ? paragraphs : [bodyParagraph("")]
+        children: paragraphs.length > 0 ? paragraphs : [emptyParagraph]
       }
     ]
   });
 
-  return await Packer.toBuffer(doc);
+  return Packer.toBuffer(doc);
 }
