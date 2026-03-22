@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { buildFilenameFromMarkdown } from "@/lib/markdownFilename";
+import type { DocumentStyle } from "@/lib/mdToDocx";
 import styles from "./page.module.css";
 
 const DEFAULT_MARKDOWN = `# 标题（一级）
@@ -20,6 +21,7 @@ const DEFAULT_MARKDOWN = `# 标题（一级）
 
 export default function Page() {
   const [markdown, setMarkdown] = useState<string>(DEFAULT_MARKDOWN);
+  const [docStyle, setDocStyle] = useState<DocumentStyle>("制度文件");
   const [isConverting, setIsConverting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>("");
 
@@ -50,7 +52,7 @@ export default function Page() {
       const response = await fetch("/api/convert", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ markdown: trimmed, filename: downloadName })
+        body: JSON.stringify({ markdown: trimmed, filename: downloadName, style: docStyle })
       });
 
       if (!response.ok) {
@@ -102,6 +104,20 @@ export default function Page() {
       <div className={styles.stats}>
         <span>字符：{stats.chars}</span>
         <span>行数：{stats.lines}</span>
+      </div>
+
+      <div className={styles.styleSelector}>
+        <span className={styles.styleSelectorLabel}>文档样式：</span>
+        {(["制度文件", "一般公文"] as const).map((s) => (
+          <button
+            key={s}
+            className={`${styles.styleBtn} ${docStyle === s ? styles.styleBtnActive : ""}`}
+            onClick={() => setDocStyle(s)}
+            type="button"
+          >
+            {s}
+          </button>
+        ))}
       </div>
 
       <textarea
