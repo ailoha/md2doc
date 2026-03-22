@@ -50,6 +50,40 @@
   color: #4b5563;
 }
 
+.styleSelector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.styleSelectorLabel {
+  font-size: 13px;
+  color: #4b5563;
+}
+
+.styleBtn {
+  padding: 5px 14px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  color: #374151;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.styleBtn:hover {
+  background: #f3f4f6;
+}
+
+.styleBtnActive {
+  border-color: #3b82f6;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
 .editor {
   width: 100%;
   box-sizing: border-box;

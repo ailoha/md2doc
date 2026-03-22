@@ -374,7 +374,11 @@ function appendList(listNode: MarkdownNode, paragraphs: Paragraph[], level = 0):
   }
 }
 
-function appendBlock(node: MarkdownNode, paragraphs: Paragraph[]): void {
+function appendBlock(
+  node: MarkdownNode,
+  paragraphs: Paragraph[],
+  headingFn: (text: string, level: 1 | 2 | 3) => Paragraph
+): void {
   switch (node.type) {
     case "heading": {
       const text = extractPlainText(getChildren(node)).trim();
@@ -383,7 +387,7 @@ function appendBlock(node: MarkdownNode, paragraphs: Paragraph[]): void {
       }
 
       const depth = Math.min(3, Math.max(1, Number(node.depth ?? 1))) as 1 | 2 | 3;
-      paragraphs.push(headingParagraph(text, depth));
+      paragraphs.push(headingFn(text, depth));
       return;
     }
 
@@ -407,7 +411,7 @@ function appendBlock(node: MarkdownNode, paragraphs: Paragraph[]): void {
 
     case "blockquote": {
       for (const child of getChildren(node)) {
-        appendBlock(child, paragraphs);
+        appendBlock(child, paragraphs, headingFn);
       }
       return;
     }
@@ -437,7 +441,42 @@ function footer(): Footer {
   });
 }
 
-export async function mdToDocxBuffer(markdown: string): Promise<Buffer> {
+export type DocumentStyle = "制度文件" | "一般公文";
+
+function headingParagraphGeneral(text: string, level: 1 | 2 | 3): Paragraph {
+  const headingLevel =
+    level === 1 ? HeadingLevel.HEADING_1 : level === 2 ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_3;
+  const font = level === 1 ? PRESET.fonts.h1 : level === 2 ? PRESET.fonts.h2 : PRESET.fonts.h3;
+  const size = level === 1 ? SIZE_2 : SIZE_3;
+
+  if (level === 1) {
+    return new Paragraph({
+      heading: headingLevel,
+      alignment: AlignmentType.CENTER,
+      children: [
+        makeRun({ text, eastAsia: font.eastAsia, ascii: font.ascii, size })
+      ],
+      spacing: commonSpacing(),
+      indent: { left: 0, right: 0, firstLine: 0 }
+    });
+  }
+
+  return new Paragraph({
+    heading: headingLevel,
+    alignment: AlignmentType.LEFT,
+    children: [
+      makeRun({ text, eastAsia: font.eastAsia, ascii: font.ascii, size })
+    ],
+    spacing: commonSpacing(),
+    indent: {
+      left: PRESET.indent.left,
+      right: PRESET.indent.right,
+      firstLine: PRESET.indent.firstLine
+    }
+  });
+}
+
+export async function mdToDocxBuffer(markdown: string, style: DocumentStyle = "制度文件"): Promise<Buffer> {
   const tree = unified().use(remarkParse).parse(markdown) as MarkdownNode;
   const paragraphs: Paragraph[] = [];
   const emptyParagraph = bodyParagraphFromRuns([
@@ -449,8 +488,10 @@ export async function mdToDocxBuffer(markdown: string): Promise<Buffer> {
     })
   ]);
 
+  const headingFn = style === "一般公文" ? headingParagraphGeneral : headingParagraph;
+
   for (const node of getChildren(tree)) {
-    appendBlock(node, paragraphs);
+    appendBlock(node, paragraphs, headingFn);
   }
 
   const doc = new Document({

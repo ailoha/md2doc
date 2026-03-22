@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { mdToDocxBuffer } from "@/lib/mdToDocx";
+import { mdToDocxBuffer, type DocumentStyle } from "@/lib/mdToDocx";
 import { normalizeDocxFilename } from "@/lib/markdownFilename";
+
+const VALID_STYLES: DocumentStyle[] = ["制度文件", "一般公文"];
 
 export const runtime = "nodejs";
 
@@ -9,6 +11,7 @@ const MAX_MARKDOWN_SIZE = 2_000_000;
 type ConvertPayload = {
   markdown: string;
   filename?: string;
+  style?: DocumentStyle;
 };
 
 export async function POST(req: Request) {
@@ -27,7 +30,7 @@ export async function POST(req: Request) {
   const filename = normalizeDocxFilename(parsed.value.filename);
 
   try {
-    const docBuffer = await mdToDocxBuffer(parsed.value.markdown);
+    const docBuffer = await mdToDocxBuffer(parsed.value.markdown, parsed.value.style);
     return new NextResponse(new Uint8Array(docBuffer), {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -63,11 +66,16 @@ function parsePayload(input: unknown): { ok: true; value: ConvertPayload } | { o
     return { ok: false, message: "`filename` 必须是字符串" };
   }
 
+  if (typeof maybe.style !== "undefined" && !VALID_STYLES.includes(maybe.style as DocumentStyle)) {
+    return { ok: false, message: "`style` 必须是 \"制度文件\" 或 \"一般公文\"" };
+  }
+
   return {
     ok: true,
     value: {
       markdown: maybe.markdown,
-      filename: typeof maybe.filename === "string" ? maybe.filename : undefined
+      filename: typeof maybe.filename === "string" ? maybe.filename : undefined,
+      style: (maybe.style as DocumentStyle) ?? "制度文件"
     }
   };
 }
