@@ -12,6 +12,7 @@ import {
 } from "docx";
 import { unified } from "unified";
 import remarkParse from "remark-parse";
+import JSZip from "jszip";
 
 type MarkdownNode = {
   type: string;
@@ -516,5 +517,17 @@ export async function mdToDocxBuffer(markdown: string, style: DocumentStyle = "�
     ]
   });
 
-  return Packer.toBuffer(doc);
+  const buf = await Packer.toBuffer(doc);
+
+  // The docx library only supports w:firstLine (twips), which Word displays as
+  // centimeters. To get Word to show "2 字符" we need w:firstLineChars="200"
+  // (hundredths of a character). Post-process the DOCX XML to patch this.
+  const zip = await JSZip.loadAsync(buf);
+  const docXml = await zip.file("word/document.xml")!.async("string");
+  const patched = docXml.replace(
+    /w:firstLine="480"/g,
+    'w:firstLineChars="200" w:firstLine="480"'
+  );
+  zip.file("word/document.xml", patched);
+  return zip.generateAsync({ type: "nodebuffer" });
 }
