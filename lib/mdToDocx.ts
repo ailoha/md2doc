@@ -32,8 +32,8 @@ const SIZE_4 = ptToHalfPoint(14);
 
 const PRESET = {
   margins: {
-    top: cmToTwips(3.2),
-    bottom: cmToTwips(2.6),
+    top: cmToTwips(3.458),
+    bottom: cmToTwips(3.258),
     left: cmToTwips(2.8),
     right: cmToTwips(2.6)
   },

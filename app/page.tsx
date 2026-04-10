@@ -139,7 +139,7 @@ export default function Page() {
         <h2 className={styles.presetTitle}>预设格式</h2>
         <ul className={styles.presetList}>
           <li>文件名：默认使用第一条一级标题（`# `）作为 `标题.docx`，无一级标题时为 `md2doc.docx`。</li>
-          <li>页边距：上 3.2cm、下 2.6cm、左 2.8cm、右 2.6cm。</li>
+          <li>页边距：上 34.58mm、下 32.58mm、左 28mm、右 26mm。</li>
           <li>缩进：左右 0；首行缩进 2 字符。</li>
           <li>行距：固定值 30 磅。</li>
           <li>标题：# 方正小标宋_GBK 二号居中；## 方正黑体_GBK 三号居中；### 方正楷体_GBK 三号居中。</li>
