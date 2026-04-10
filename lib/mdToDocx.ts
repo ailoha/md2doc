@@ -477,7 +477,7 @@ function headingParagraphGeneral(text: string, level: 1 | 2 | 3): Paragraph {
   });
 }
 
-export async function mdToDocxBuffer(markdown: string, style: DocumentStyle = "制度文件"): Promise<Buffer> {
+export async function mdToDocxBuffer(markdown: string, style: DocumentStyle = "一般公文"): Promise<Buffer> {
   const tree = unified().use(remarkParse).parse(markdown) as MarkdownNode;
   const paragraphs: Paragraph[] = [];
   const emptyParagraph = bodyParagraphFromRuns([
