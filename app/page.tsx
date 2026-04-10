@@ -21,7 +21,7 @@ const DEFAULT_MARKDOWN = `# 标题（一级）
 
 export default function Page() {
   const [markdown, setMarkdown] = useState<string>(DEFAULT_MARKDOWN);
-  const [docStyle, setDocStyle] = useState<DocumentStyle>("制度文件");
+  const [docStyle, setDocStyle] = useState<DocumentStyle>("一般公文");
   const [isConverting, setIsConverting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>("");
 
